@@ -1,0 +1,33 @@
+{
+  "name": "FTTH Supervisor Pro",
+  "short_name": "Supervisor WIN",
+  "id": "./",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#ff4501",
+  "theme_color": "#0f172a",
+  "lang": "es-PE",
+  "description": "Supervisión de campo FTTH: órdenes, cuadrillas, fotos con sello y reportes.",
+  "icons": [
+    {
+      "src": "icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
