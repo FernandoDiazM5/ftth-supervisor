@@ -1,5 +1,5 @@
 // Service worker: la app abre sin señal. Los datos van y vienen de Sheets por la red.
-const CACHE = 'ftth-5c7fdd021f';
+const CACHE = 'ftth-4da5b0c837';
 const BASICOS = ['./', './index.html', './manifest.webmanifest', './icons/icon-192.png', './icons/icon-512.png'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(BASICOS)).then(() => self.skipWaiting())); });
 self.addEventListener('activate', e => { e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== CACHE).map(k => caches.delete(k)))).then(() => self.clients.claim())); });

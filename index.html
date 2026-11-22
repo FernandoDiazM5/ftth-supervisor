@@ -5993,6 +5993,9 @@ function buscarConocimiento(pregunta) {
     return { fichas, qwin };
 }
 
+// Gemini a veces tarda: no se deja la pantalla "pensando" indefinidamente
+const conEspera = (promesa, ms, valorSiTarda) => Promise.race([promesa, new Promise(ok => setTimeout(() => ok(valorSiTarda), ms))]);
+
 /* ---------------- Pantalla ---------------- */
 function renderAsistente() {
     verTabAsistente(tabAsistente);
@@ -6045,7 +6048,7 @@ async function consultarAsistente() {
     const btn = document.getElementById('asis-btn');
     btn.disabled = true; btn.textContent = 'Pensando…';
     try {
-        const r = await llamarApi('preguntar', { pregunta });
+        const r = await conEspera(llamarApi('preguntar', { pregunta }), 60000, { ok: false, error: 'Gemini tardó más de 1 minuto. Abajo están tus fichas y penalidades que coinciden; intenta de nuevo en un momento.' });
         if (!r || !r.ok) throw new Error((r && r.error) || 'Sin respuesta');
         // Las fuentes que usó el servidor (mismas fichas, quizá más actualizadas)
         const porId = id => conocimiento.find(f => String(f.id) === String(id));
@@ -6302,7 +6305,7 @@ async function generarFichasAsistente() {
     const btn = document.getElementById('asis-generar');
     btn.disabled = true; btn.textContent = 'Leyendo el documento…';
     try {
-        const r = await conCarga('La IA está leyendo el documento y armando fichas…', () => llamarApi('generarFichas', datos));
+        const r = await conCarga('La IA está leyendo el documento y armando fichas…', () => conEspera(llamarApi('generarFichas', datos), 240000, { ok: false, error: 'Tardó más de 4 minutos. Revisa en un rato si aparecieron borradores (Sincronizar) o divide el documento.' }));
         if (!r || !r.ok) throw new Error((r && r.error) || 'Sin respuesta');
         r.fichas.forEach(aplicarFichaLocal);
         document.getElementById('asis-texto').value = '';
@@ -6322,11 +6325,11 @@ async function guardarClaveIA() {
     if (!clave) { mostrarToast('Pega la clave'); return; }
     if (necesitaConexion()) return;
     try {
-        const r = await conCarga('Probando la clave con Gemini…', () => llamarApi('configurarIA', { clave }));
+        const r = await conCarga('Probando la clave con Gemini…', () => conEspera(llamarApi('configurarIA', { clave }), 45000, { ok: true, lento: true }));
         if (!r || !r.ok) throw new Error((r && r.error) || 'Sin respuesta');
         iaActiva = true;
         document.getElementById('asis-clave').value = '';
-        mostrarToast('IA activada ✓');
+        mostrarToast(r.lento ? 'Clave guardada. La prueba tardó: haz una consulta para confirmar que responde.' : 'IA activada ✓');
         pintarEstadoIA();
     } catch (e) { mostrarToast('La clave no funcionó: ' + e.message); }
 }
