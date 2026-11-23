@@ -3069,16 +3069,46 @@ function dibujarTeselas(lat, lon, z, contenedor = 'gps-teselas') {
     const rad = lat * Math.PI / 180;
     const px = (lon + 180) / 360 * n * T;
     const py = (1 - Math.log(Math.tan(rad) + 1 / Math.cos(rad)) / Math.PI) / 2 * n * T;
-    const html = [];
+    const lista = [];
     for (let tx = Math.floor((px - W / 2) / T); tx <= Math.floor((px + W / 2) / T); tx++) {
         for (let ty = Math.floor((py - H / 2) / T); ty <= Math.floor((py + H / 2) / T); ty++) {
             if (ty < 0 || ty >= n) continue;
             const x = ((tx % n) + n) % n;
-            html.push(`<img src="https:\/\/tile.openstreetmap.org/${z}/${x}/${ty}.png" alt="" draggable="false"
-                style="position:absolute;width:${T}px;height:${T}px;left:${Math.round(tx * T - px + W / 2)}px;top:${Math.round(ty * T - py + H / 2)}px">`);
+            lista.push({ src: `https:\/\/tile.openstreetmap.org/${z}/${x}/${ty}.png`, left: Math.round(tx * T - px + W / 2), top: Math.round(ty * T - py + H / 2) });
         }
     }
-    caja.innerHTML = html.join('');
+    ponerTeselas(caja, lista);
+}
+
+// Coloca las teselas reutilizando las imágenes que ya están cargadas: así el mapa no se pone
+// en negro cada vez que llega una ubicación nueva o se redibuja (antes se borraba todo con innerHTML).
+function ponerTeselas(caja, lista, T = 256) {
+    const previas = new Map();
+    caja.querySelectorAll('img[data-t]').forEach(img => previas.set(img.dataset.t, img));
+    lista.forEach(t => {
+        let img = previas.get(t.src);
+        if (img) previas.delete(t.src);
+        else {
+            img = document.createElement('img');
+            img.alt = ''; img.draggable = false; img.dataset.t = t.src;
+            img.style.cssText = `position:absolute;width:${T}px;height:${T}px`;
+            img.src = t.src;
+            caja.appendChild(img);
+        }
+        const l = t.left + 'px', tp = t.top + 'px';
+        if (img.style.left !== l) img.style.left = l;
+        if (img.style.top !== tp) img.style.top = tp;
+    });
+    // Las que ya no se ven se quitan recién cuando las nuevas cargaron, para no dejar huecos
+    const sobran = [...previas.values()];
+    if (!sobran.length) return;
+    const nuevas = [...caja.querySelectorAll('img[data-t]')].filter(i => !i.complete);
+    const quitar = () => sobran.forEach(i => i.remove());
+    if (!nuevas.length) return quitar();
+    let faltan = nuevas.length;
+    const listo = () => { if (--faltan <= 0) quitar(); };
+    nuevas.forEach(i => { i.addEventListener('load', listo, { once: true }); i.addEventListener('error', listo, { once: true }); });
+    setTimeout(quitar, 4000);
 }
 
 window.addEventListener('resize', () => { if (!document.getElementById('gps-mapa').classList.contains('hidden')) actualizarMapaGPS(); });
@@ -6660,11 +6690,10 @@ function dibujarRuta() {
     for (let tx = Math.floor((c.x - W / 2) / T); tx <= Math.floor((c.x + W / 2) / T); tx++) {
         for (let ty = Math.floor((c.y - H / 2) / T); ty <= Math.floor((c.y + H / 2) / T); ty++) {
             if (ty < 0 || ty >= n) continue;
-            tiles.push(`<img src="https:\/\/tile.openstreetmap.org/${z}/${((tx % n) + n) % n}/${ty}.png" alt="" draggable="false"
-                style="position:absolute;width:${T}px;height:${T}px;left:${Math.round(tx * T - c.x + W / 2)}px;top:${Math.round(ty * T - c.y + H / 2)}px">`);
+            tiles.push({ src: `https:\/\/tile.openstreetmap.org/${z}/${((tx % n) + n) % n}/${ty}.png`, left: Math.round(tx * T - c.x + W / 2), top: Math.round(ty * T - c.y + H / 2) });
         }
     }
-    document.getElementById('ruta-teselas').innerHTML = tiles.join('');
+    ponerTeselas(document.getElementById('ruta-teselas'), tiles, T);
 
     const pos = (la, lo) => { const p = proyectar(la, lo, z); return { x: Math.round(p.x - c.x + W / 2), y: Math.round(p.y - c.y + H / 2) }; };
     const marcas = [];
@@ -7007,12 +7036,14 @@ function iniciarSeguimientoRuta(reintentar) {
     pintarEstadoGps();
     let primera = !rutaYo;
     const alUbicar = p => {
+        const antes = rutaYo;
         rutaYo = { lat: p.coords.latitude, lon: p.coords.longitude, acc: Math.round(p.coords.accuracy || 0) };
         ultimaPos = { lat: rutaYo.lat.toFixed(7), lon: rutaYo.lon.toFixed(7), acc: rutaYo.acc, t: Date.now() };
         rutaOrdenes.forEach(o => { o.dist = o.lat !== null ? distanciaMetros(rutaYo.lat, rutaYo.lon, o.lat, o.lon) : null; });
         rutaGpsMsg = '';
         if (primera && rutaOrdenes.length) { primera = false; renderRuta(); }   // con la 1.ª ubicación se recalcula el orden
-        else if (rutaVista && rutaOrdenes.length) dibujarRuta();                // luego solo se mueve el punto
+        else if (rutaVista && rutaOrdenes.length && (!antes || distanciaMetros(antes.lat, antes.lon, rutaYo.lat, rutaYo.lon) > 2 || Math.abs(antes.acc - rutaYo.acc) > 5))
+            dibujarRuta();                                                      // luego solo se mueve el punto (si de verdad se movió)
         pintarEstadoGps();
     };
     const alFallar = e => {
