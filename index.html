@@ -2634,11 +2634,12 @@ function pasosPermiso(tipo, que) {
             'Mejor opción: usa la app instalada (botón <b>Abrir en Chrome</b>), que tiene cámara propia.'
         ], chrome: true };
     const pasos = [
-        `En Chrome: toca <b>⋮</b> (arriba a la derecha) → <b>Configuración</b> → <b>Configuración de sitios</b> → <b>${permisoSitio}</b> → busca <i>fernandodiazm5.github.io</i> → <b>Permitir</b>.`,
-        `En el celular: Ajustes → Aplicaciones → <b>Chrome</b> → Permisos → ${permisoAndroid} → <b>Permitir</b>.`
+        `<b>Ajustes del celular</b> → Aplicaciones → <b>Chrome</b> → Permisos → ${permisoAndroid} → <b>Permitir</b> (o "Permitir solo mientras se usa"). Si dice "No volver a preguntar", cámbialo aquí.`,
+        `<b>Xiaomi / Redmi / POCO:</b> Ajustes → Aplicaciones → Administrar aplicaciones → <b>Chrome</b> → <b>Otros permisos</b> → activa "Mostrar ventanas emergentes mientras se ejecuta en segundo plano" y "Abrir nuevas ventanas mientras se ejecuta en segundo plano".`,
+        `En Chrome: <b>⋮</b> → Configuración → Configuración de sitios → <b>${permisoSitio}</b> → revisa que <i>fernandodiazm5.github.io</i> no esté en "Bloqueados".`
     ];
-    if (e.tipo === 'apk') pasos.push(`También: Ajustes → Aplicaciones → <b>Supervisor WIN</b> → Permisos → ${permisoAndroid} → <b>Permitir</b>.`);
-    pasos.push('Vuelve a la app y toca <b>Probar de nuevo</b>.');
+    pasos.push(`Si usas el APK: Ajustes → Aplicaciones → <b>Supervisor WIN</b> → Permisos → ${permisoAndroid} → <b>Permitir</b>.`);
+    pasos.push('Cierra la app por completo, ábrela de nuevo y toca <b>Probar de nuevo</b>.');
     return { titulo: que === 'galeria' ? 'No se abrió la galería' : que === 'ubicacion' ? 'Falta el permiso de ubicación' : 'Falta el permiso de cámara', pasos, chrome: false };
 }
 
@@ -2736,18 +2737,23 @@ function probarUbicacionDiag() {
         { enableHighAccuracy: true, timeout: 15000 });
 }
 
-// Mensaje claro según el error de la cámara
-function explicarErrorCamara(e, respaldo) {
+// Mensaje claro según el error de la cámara.
+// La cámara del celular se abre solo con un toque en el botón: abrirla sola, después del error, Chrome lo bloquea sin avisar.
+async function explicarErrorCamara(e, respaldo) {
     const n = e && e.name;
-    const usarSistema = respaldo ? { texto: 'Usar la cámara del celular', fn: () => usarCamaraSistema(respaldo) } : null;
+    const usarSistema = respaldo ? { texto: 'Usar la cámara del celular', fn: () => abrirSelector(respaldo, 'camara') } : null;
+    const reintentar = respaldo && ultimaCamara ? () => abrirCamara(...ultimaCamara) : probarCamaraDiag;
     if (n === 'NotAllowedError' || n === 'SecurityError') {
-        mostrarAyudaPermisos('camara', { reintentar: respaldo && ultimaCamara ? () => abrirCamara(...ultimaCamara) : probarCamaraDiag, alternativa: usarSistema, detalle: 'La app no tiene permiso para usar la cámara.' });
-    } else if (n === 'NotReadableError' || n === 'TrackStartError') {
-        mostrarAyudaPermisos('camara', { alternativa: usarSistema, detalle: 'Otra app está usando la cámara (WhatsApp, llamada, linterna…). Ciérrala y prueba de nuevo.' });
-    } else if (n === 'NotFoundError' || n === 'OverconstrainedError') {
-        if (respaldo) usarCamaraSistema(respaldo); else mostrarToast('No se encontró cámara');
-    } else if (respaldo) usarCamaraSistema(respaldo);
-    else mostrarToast('No se pudo abrir la cámara: ' + ((e && e.message) || n || ''));
+        const sitio = await estadoPermiso('camera');
+        const detalle = sitio === 'denied'
+            ? 'Chrome tiene bloqueada la cámara para esta app.'
+            : 'Android no deja que Chrome use la cámara (el permiso de la app Chrome está bloqueado).';
+        mostrarAyudaPermisos('camara', { reintentar, alternativa: usarSistema, detalle });
+    } else if (n === 'NotReadableError' || n === 'TrackStartError' || n === 'AbortError') {
+        mostrarAyudaPermisos('camara', { reintentar, alternativa: usarSistema, detalle: 'Otra app está usando la cámara (WhatsApp, llamada, linterna…). Ciérrala y prueba de nuevo.' });
+    } else {
+        mostrarAyudaPermisos('camara', { reintentar, alternativa: usarSistema, detalle: 'No se pudo abrir la cámara de la app' + (n ? ` (${n})` : '') + '. Prueba con la cámara del celular.' });
+    }
 }
 
 
