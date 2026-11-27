@@ -1711,6 +1711,9 @@ async function procesarCola() {
             if (!r || !r.ok) {
                 item.intentos = (item.intentos || 0) + 1;
                 item.error = (r && r.error) || 'Error desconocido';
+                // Con Drive lleno Google bloquea la hoja y responde "No tienes permiso…"
+                if (/permiso para acceder al documento|access the requested document|quota|almacenamiento/i.test(item.error))
+                    item.error = 'Tu Google Drive está lleno: Google no deja guardar en la hoja. Libera espacio en drive.google.com/settings/storage';
                 avisos.push(item.error);
                 cola.splice(cola.indexOf(item), 1); cola.push(item);       // al final de la fila
                 await guardarCola();
