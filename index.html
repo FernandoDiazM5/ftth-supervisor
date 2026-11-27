@@ -464,6 +464,7 @@
                                 </div>
                             </div>
                             <div id="cuadrilla_info" class="hidden text-[11px] rounded-lg px-2.5 py-1.5"></div>
+                            <div id="cuadrilla-bloqueo" class="hidden text-[11px] rounded-lg px-2.5 py-1.5 mt-1.5 bg-slate-100 text-slate-700 border border-slate-200"></div>
 
                             <datalist id="lista-tec-nombres"></datalist>
                             <datalist id="lista-tec-dnis"></datalist>
@@ -5942,7 +5943,8 @@ function upsertTecnico(tec, reg) {
         supervisiones.forEach(s => [s.tec1, s.tec2].forEach(x => { if (x && x.key === viejo) { x.key = dni; x.dni = dni; } }));
         t = sinDni;
     }
-    if (!dni && !t) t = tecnicos.find(x => normNombre(x.nombre) === nombre) || null;
+    // El nombre es único: si ya existe un técnico con ese nombre, es el mismo (no se crea otro)
+    if (!t) t = tecnicos.find(x => normNombre(x.nombre) === nombre) || null;
 
     if (!t) {
         t = {
@@ -5960,14 +5962,16 @@ function upsertTecnico(tec, reg) {
         tecnicos.push(t);
         return { tecnico: t, nuevo: true };
     }
-    t.nombre = nombre || t.nombre;
-    if (reg.contrata) t.contrata = reg.contrata;
-    if (cuadrillaDe(reg)) t.cuadrilla = cuadrillaDe(reg);
+    // Ya registrado: la supervisión solo completa lo que falta; para cambiar sus datos se edita su ficha
+    const completar = (campo, valor) => { if (valor && !t[campo]) t[campo] = valor; };
+    completar('nombre', nombre);
+    completar('contrata', reg.contrata);
+    completar('cuadrilla', cuadrillaDe(reg));
     t.ultima_vez = reg.fecha;
-    if (tec.sctr) t.sctr = tec.sctr;               // "Sin verificar" (p. ej. en frío) no borra lo que se sabía
-    if (tec.licencia) t.licencia = tec.licencia;
-    if (tec.sctr_vence) t.sctr_vence = tec.sctr_vence;
-    if (tec.licencia_vence) t.licencia_vence = tec.licencia_vence;
+    completar('sctr', tec.sctr);
+    completar('licencia', tec.licencia);
+    completar('sctr_vence', tec.sctr_vence);
+    completar('licencia_vence', tec.licencia_vence);
     return { tecnico: t, nuevo: false };
 }
 
@@ -6155,7 +6159,7 @@ function listaCuadrillas() {
         const completo = sups.map(s => normNombre(cuadrillaDe(s))).find(n => n.split(' ').length > 3);
         const m = maestroCuadrilla(clave);
         const editado = m && fechaDe(m.editado_en) && fechaDe(m.editado_en) > (fechaDe(u.fecha) || 0);
-        const nombre = (editado && m.nombre) || completo || normNombre([movil, u.contrata, u.tec1 && u.tec1.nombre].filter(Boolean).join(' '));
+        const nombre = (m && m.nombre && normNombre(m.nombre)) || completo || normNombre([movil, u.contrata, u.tec1 && u.tec1.nombre].filter(Boolean).join(' '));
         if (editado) {
             [[m.tec1_dni, m.tec1_nombre], [m.tec2_dni, m.tec2_nombre]].forEach(([dni, nom]) => { if (nom) tecs[dni || nom] = nom; });
             if (m.placa && !placas.includes(String(m.placa).toUpperCase())) placas.unshift(String(m.placa).toUpperCase());
@@ -6415,6 +6419,7 @@ function renderVehiculos(cont, q, f) {
 // ---------- Paso 2: al registrar la cuadrilla o la placa se carga lo guardado ----------
 function reiniciarCargaFlota() {
     editarCuadrilla(true);
+    bloquearDatosCuadrilla('');
     ['tec1_dni', 'tec2_dni', 'movil', 'veh_placa'].forEach(id => { const el = document.getElementById(id); if (el) delete el.dataset.cargado; });
     ['cuadrilla_info', 'veh_info'].forEach(id => document.getElementById(id).classList.add('hidden'));
 }
@@ -6551,7 +6556,7 @@ function cuadrillaPorTexto(texto) {
     const t = normNombre(texto);
     if (!t) return null;
     const todas = listaCuadrillas();
-    const exacta = todas.find(c => c.nombre === t);
+    const exacta = todas.find(c => c.nombre === t && c.maestro) || todas.find(c => c.nombre === t);   // la registrada primero
     if (exacta) return exacta;
     const m = codigoMovil(t);
     return m ? todas.find(c => codigoMovil(c.movil) === m && t.includes(partnerDe(c.contrata).toUpperCase())) || null : null;
@@ -6587,7 +6592,30 @@ function cargarCuadrillaCompleta(c) {
     renderDocFotos();
     mostrarResumenCuadrilla(c);
     aplicarModalidad();
+    if (c.maestro || d.deFicha) bloquearDatosCuadrilla(c.clave);
     programarBorrador();
+}
+
+// Datos de una cuadrilla registrada: no se vuelven a llenar en cada supervisión.
+// Los campos que ya tienen valor quedan bloqueados; se cambian desde su ficha (Flota › Cuadrillas › Editar datos).
+const CAMPOS_CUADRILLA = ['contrata', 'movil', 'tipo_cuadrilla', 'tec1_nombre', 'tec1_dni', 'tec2_nombre', 'tec2_dni', 'veh_placa'];
+let cuadrillaBloqueada = '';
+function bloquearDatosCuadrilla(clave) {
+    cuadrillaBloqueada = clave || '';
+    CAMPOS_CUADRILLA.forEach(id => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        const bloquear = !!clave && !!String(el.value || '').trim();
+        if (el.tagName === 'SELECT') el.disabled = bloquear; else el.readOnly = bloquear;
+        el.classList.toggle('bg-slate-100', bloquear);
+        el.classList.toggle('text-slate-500', bloquear);
+        el.title = bloquear ? 'Dato de la cuadrilla registrada: se cambia en su ficha' : '';
+    });
+    const nota = document.getElementById('cuadrilla-bloqueo');
+    if (nota) {
+        nota.classList.toggle('hidden', !clave);
+        if (clave) nota.innerHTML = `🔒 Datos de la cuadrilla registrada: no hace falta volver a llenarlos. Lo que falte sí lo puedes completar. <button type="button" class="underline font-semibold" onclick="abrirEditorMaestro('cua', '${esc(clave)}')">Cambiar datos de la cuadrilla</button>`;
+    }
 }
 
 // Paso 2 en una tarjeta: si la cuadrilla es la de siempre no hace falta revisar campo por campo
@@ -6605,7 +6633,10 @@ function mostrarResumenCuadrilla(c) {
                     <p class="text-sm font-extrabold text-slate-800 break-words">${esc(c.nombre)}</p>
                     <p class="text-xs text-slate-500">${esc(v('contrata'))} · móvil ${esc(v('movil'))} · ${{ '2': 'vehículo, 2 técnicos', '1v': 'vehículo, 1 técnico', '1': 'motowin' }[v('tipo_cuadrilla')]}</p>
                 </div>
-                <button type="button" onclick="abrirCuadrilla('${esc(c.clave)}')" class="shrink-0 text-xs font-semibold text-blue-700 border border-blue-200 bg-white rounded-lg px-3 py-2">Ficha</button>
+                <div class="shrink-0 flex flex-col gap-1">
+                    <button type="button" onclick="abrirCuadrilla('${esc(c.clave)}')" class="text-xs font-semibold text-blue-700 border border-blue-200 bg-white rounded-lg px-3 py-2">Ficha</button>
+                    <button type="button" onclick="abrirEditorMaestro('cua', '${esc(c.clave)}')" class="text-xs font-semibold text-slate-700 border border-slate-300 bg-white rounded-lg px-3 py-2">✏️ Cambiar</button>
+                </div>
             </div>
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 <div class="bg-white rounded-lg border border-slate-200 p-2.5">${tec(1)}</div>
@@ -6616,7 +6647,7 @@ function mostrarResumenCuadrilla(c) {
                 <p class="text-[11px] flex flex-wrap gap-1 mt-0.5">${doc('SOAT', v('veh_soat'))} ${doc('Rev. técnica', v('veh_rev_tecnica'))}</p>
             </div>
             <div class="flex flex-col sm:flex-row gap-2">
-                <button type="button" onclick="editarCuadrilla()" class="flex-1 bg-white border border-slate-300 text-slate-700 text-sm font-semibold rounded-xl px-4 py-3">✏️ Algo cambió: editar o agregar fotos</button>
+                <button type="button" onclick="editarCuadrilla()" class="flex-1 bg-white border border-slate-300 text-slate-700 text-sm font-semibold rounded-xl px-4 py-3">📋 Revisar documentos y agregar fotos</button>
                 <button type="button" onclick="pasoSiguiente()" class="flex-1 bg-emerald-600 text-white text-sm font-bold rounded-xl px-4 py-3">✓ Es la misma, continuar</button>
             </div>
         </div>`;
@@ -6640,6 +6671,7 @@ function seleccionarCuadrilla() {
     const c = cuadrillaPorTexto(texto);
     if (c) { cargarCuadrillaCompleta(c); return; }
     // Cuadrilla nueva escrita a mano: se toma el móvil del texto y se guarda el nombre completo para Forms
+    if (cuadrillaBloqueada) bloquearDatosCuadrilla('');
     cuadrillaPhoenix = texto;
     const cod = texto.match(/^([A-Z]{1,3})\s*(\d+)/);
     if (cod && !document.getElementById('movil').value.trim()) document.getElementById('movil').value = `${cod[1]} ${cod[2]}`;
@@ -6743,13 +6775,18 @@ function listaCuadrillasSinMaestro() {
 // Datos para llenar el paso 2 al elegir una cuadrilla: lo editado (si es más nuevo que la última supervisión) o la última supervisión
 function datosCuadrilla(c) {
     const u = c.ultima, m = c.maestro;
-    const editado = m && fechaDe(m.editado_en) && (!u || u._maestro || fechaDe(m.editado_en) > (fechaDe(u.fecha) || 0));
-    if (editado || (u && u._maestro)) {
+    // Cuadrilla registrada: sus datos son los de la ficha (no los de la última supervisión).
+    // Solo lo que la ficha aún no tiene se toma de la última vez.
+    if (m) {
         const t = (dni, nom) => nom ? { nombre: nom, dni: dni || '' } : null;
+        const ult = u && !u._maestro ? u : null;
+        const tec1 = t(m.tec1_dni, m.tec1_nombre) || (ult && ult.tec1 && ult.tec1.nombre ? ult.tec1 : null);
+        const tec2 = t(m.tec2_dni, m.tec2_nombre) || (ult && ult.tec2 && ult.tec2.nombre ? ult.tec2 : null);
         return {
-            contrata: m.contrata || m.partner || (u && u.contrata) || '', movil: m.movil || c.movil || '',
-            tec1: t(m.tec1_dni, m.tec1_nombre), tec2: t(m.tec2_dni, m.tec2_nombre), placa: String(m.placa || '').toUpperCase(),
-            modalidad: ['2', '1v', '1'].includes(String(m.modalidad)) ? String(m.modalidad) : (m.tec2_nombre ? '2' : '1v')
+            contrata: m.contrata || m.partner || (ult && ult.contrata) || '', movil: m.movil || c.movil || '',
+            tec1, tec2, placa: String(m.placa || (ult && placaDe(ult)) || '').toUpperCase(),
+            modalidad: ['2', '1v', '1'].includes(String(m.modalidad)) ? String(m.modalidad) : (tec2 ? '2' : '1v'),
+            deFicha: true
         };
     }
     return {
@@ -6863,6 +6900,8 @@ async function guardarEditorMaestro() {
         if (e.nuevo && !/^\d{8}$/.test(dni)) return errorEditor('El DNI debe tener 8 dígitos');
         if (!v('m_nombre')) return errorEditor('Falta el nombre');
         if (e.nuevo && tecnicos.some(t => t.dni === dni)) return errorEditor('Ya hay un técnico con ese DNI');
+        const mismoNombreT = tecnicos.find(t => t.dni !== dni && normNombre(t.nombre) === normNombre(v('m_nombre')));
+        if (mismoNombreT) return errorEditor(`Ya hay un técnico llamado ${mismoNombreT.nombre} (DNI ${String(mismoNombreT.dni).replace(/^SN-.*/, 'sin DNI')}). Los nombres no se repiten: edita ese registro.`);
         tabla = 'Tecnicos'; claveNueva = dni;
         datos = { dni, nombre: normNombre(v('m_nombre')), contrata: partnerDe(v('m_contrata')), telefono: v('m_telefono'),
             sctr: v('m_sctr'), sctr_vence: inputAFecha(v('m_sctr_vence')), licencia: v('m_licencia'), licencia_vence: inputAFecha(v('m_licencia_vence')) };
@@ -6875,6 +6914,8 @@ async function guardarEditorMaestro() {
         if (!nombre) return errorEditor('Falta el nombre de la cuadrilla');
         if (!id) return errorEditor('Faltan la contrata y el código de móvil (ej: K 5)');
         if (e.nuevo && listaCuadrillas().some(x => x.clave === id)) return errorEditor('Esa cuadrilla (contrata + móvil) ya existe');
+        const mismoNombreC = listaCuadrillas().find(x => x.clave !== id && normNombre(x.nombre) === nombre);
+        if (mismoNombreC) return errorEditor(`Ya hay una cuadrilla llamada ${mismoNombreC.nombre}. Los nombres no se repiten: edita esa cuadrilla.`);
         for (const n of [1, 2]) if (v(`m_tec${n}_dni`) && !/^\d{8}$/.test(completarDni(v(`m_tec${n}_dni`)))) return errorEditor(`DNI del técnico ${n}: 8 dígitos`);
         tabla = 'Cuadrillas'; claveNueva = id;
         datos = { id, nombre, partner: partnerDe(contrata), contrata, movil, modalidad: v('m_modalidad'),
@@ -8287,6 +8328,9 @@ async function guardarBorrador() {
     await DB.set('borrador', b);
     pintarBarraEnCurso(b);
     pintarAvisoEdicion();
+    // Si la cuadrilla es una registrada, sus datos vuelven a quedar bloqueados
+    const cr = typeof cuadrillaPorTexto === 'function' ? cuadrillaPorTexto(document.getElementById('cuadrilla_sel').value) : null;
+    if (cr && cr.maestro) bloquearDatosCuadrilla(cr.clave);
 }
 
 async function borrarBorrador() {
