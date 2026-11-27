@@ -1797,6 +1797,25 @@ async function descargarRemoto() {
                 if (x.veh_placa && local.vehiculo && !local.vehiculo.placa) local.vehiculo.placa = String(x.veh_placa).toUpperCase();
             }
         });
+        // Lo que se borró en la hoja también se quita del celular (solo lo que ya estaba sincronizado;
+        // lo que aún no se envía se conserva)
+        if (Array.isArray(r.supervisiones)) {
+            const enHoja = new Set(r.supervisiones.map(x => String(x.id)));
+            const enCola = new Set(cola.map(c => String((c.payload && (c.payload.fotos_de || (c.payload.supervision && c.payload.supervision.id))) || '')));
+            const quitar = new Set(supervisiones.filter(x => x.sync === 'ok' && !enHoja.has(String(x.id)) && !enCola.has(String(x.id))).map(x => String(x.id)));
+            if (quitar.size) {
+                supervisiones = supervisiones.filter(x => !quitar.has(String(x.id)));
+                observaciones = observaciones.filter(o => !quitar.has(String(o.supervision_id)));
+                penalidades = penalidades.filter(o => !quitar.has(String(o.supervision_id)));
+            }
+            if (Array.isArray(r.observaciones)) {
+                const obsHoja = new Set(r.observaciones.map(o => String(o.id)));
+                const sinEnviar = new Set(supervisiones.filter(x => x.sync !== 'ok').map(x => String(x.id)));
+                const obsPend = new Set(cola.filter(c => c.action === 'actualizarObservacion').map(c => String(c.payload.id)));
+                observaciones = observaciones.filter(o => obsHoja.has(String(o.id)) || obsPend.has(String(o.id))
+                    || sinEnviar.has(String(o.supervision_id)) || enCola.has(String(o.supervision_id)));
+            }
+        }
         supervisiones.sort((a, b) => Number(b.id) - Number(a.id));
         contactos = r.contactos || [];
         vehiculosMaestro = r.vehiculos || [];
