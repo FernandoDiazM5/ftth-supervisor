@@ -2493,14 +2493,15 @@ const esAndroid = () => /Android/i.test(navigator.userAgent || '');
 
 function urlNavegacion(app, lat, lon) {
     const web = app === 'waze'
-        ? `https:\/\/waze.com/ul?ll=${lat},${lon}&navigate=yes`
+        ? `https:\/\/www.waze.com/ul?ll=${lat}%2C${lon}&navigate=yes&zoom=17&utm_source=supervisor_win`
         : `https:\/\/www.google.com/maps/dir/?api=1&destination=${lat},${lon}&travelmode=driving`;
     if (!esAndroid()) return web;
     // Intent de Android: abre la app instalada; si no está, abre la página web
     const resp = `S.browser_fallback_url=${encodeURIComponent(web)}`;
     return app === 'waze'
-        ? `intent:\/\/ul?ll=${lat},${lon}&navigate=yes#Intent;scheme=waze;package=com.waze;${resp};end`
-        : `intent:\/\/maps.google.com/maps?daddr=${lat},${lon}#Intent;scheme=https;package=com.google.android.apps.maps;${resp};end`;
+        // Waze: enlace oficial www.waze.com/ul abierto en la app (antes "waze:\/\/ul?…" abría Waze sin destino)
+        ? `intent:\/\/www.waze.com/ul?ll=${lat}%2C${lon}&navigate=yes&zoom=17&utm_source=supervisor_win#Intent;scheme=https;package=com.waze;${resp};end`
+        : `intent:\/\/www.google.com/maps/dir/?api=1&destination=${lat},${lon}&travelmode=driving&dir_action=navigate#Intent;scheme=https;package=com.google.android.apps.maps;${resp};end`;
 }
 
 // Punto de entrada: pregunta la app (o usa la recordada)
